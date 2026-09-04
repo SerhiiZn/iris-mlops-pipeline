@@ -68,15 +68,22 @@ jobs:
           # Ожидание поднятия туннеля
           sleep 3
 
-          # 3. Запуск Python-скрипта для отправки пайплайна на localhost
+# 3. Запуск Python-скрипта с отключением проверки SSL для локального туннеля
           python -c "
           import os
           from kfp.client import Client
+          import kfp_server_api
+
+          # Настраиваем конфигурацию для игнорирования самоподписанного сертификата
+          configuration = kfp_server_api.Configuration()
+          configuration.verify_ssl = False
 
           client = Client(
               host='https://localhost:8888',
               existing_token=os.environ['OPENSHIFT_TOKEN'],
-              namespace='serhiizn-dev'
+              namespace='serhiizn-dev',
+              # Передаем конфигурацию с отключенным SSL в клиент
+              client_configuration=configuration
           )
 
           c_val = float(os.environ['C_PARAM'])
