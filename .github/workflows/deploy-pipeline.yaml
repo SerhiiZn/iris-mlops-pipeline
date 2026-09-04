@@ -74,7 +74,7 @@ jobs:
           from kfp.client import Client
 
           client = Client(
-              host='http://localhost:8888',
+              host='https://localhost:8888',
               existing_token=os.environ['OPENSHIFT_TOKEN'],
               namespace='serhiizn-dev'
           )
