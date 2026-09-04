@@ -47,13 +47,12 @@ jobs:
       - name: Install OpenShift CLI (oc)
         uses: redhat-actions/oc-installer@v1
         with:
-          version: 'latest'
+          oc_version: 'latest'
 
       - name: Submit to OpenShift KFP via Port-Forward
         env:
           OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
           OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_SA_TOKEN }}
-          # Вычисляем параметры в зависимости от того, как был запущен воркфлоу (push или workflow_dispatch)
           C_PARAM: ${{ github.event.inputs.c_param || '1.0' }}
           SCALER: ${{ github.event.inputs.scaler || 'standard' }}
         run: |
@@ -61,20 +60,19 @@ jobs:
           oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify=true
           oc project serhiizn-dev
 
-          # 2. Запуск port-forward в фоновом режиме (замените ds-pipeline-dspa на имя вашего сервиса)
+          # 2. Запуск port-forward в фоновом режиме
           oc port-forward svc/ds-pipeline-dspa 8888:8888 &
           PORT_FORWARD_PID=$!
           
           # Ожидание поднятия туннеля
           sleep 3
 
-# 3. Запуск Python-скрипта с отключением проверки SSL для локального туннеля
+          # 3. Запуск Python-скрипта с отключением проверки SSL для локального туннеля
           python -c "
           import os
           from kfp.client import Client
           import kfp_server_api
 
-          # Настраиваем конфигурацию для игнорирования самоподписанного сертификата
           configuration = kfp_server_api.Configuration()
           configuration.verify_ssl = False
 
@@ -82,7 +80,6 @@ jobs:
               host='https://localhost:8888',
               existing_token=os.environ['OPENSHIFT_TOKEN'],
               namespace='serhiizn-dev',
-              # Передаем конфигурацию с отключенным SSL в клиент
               client_configuration=configuration
           )
 
