@@ -1,0 +1,76 @@
+name: Deploy KFP Pipeline to OpenShift
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      c_param:
+        description: 'C parameter for LogisticRegression'
+        required: true
+        default: '1.0'
+        type: string
+      scaler:
+        description: 'Scaler type (standard or minmax)'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+          - standard
+          - minmax
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile Pipeline
+        run: |
+          # Запускаем скрипт, который создаст iris_pipeline.yaml из python-кода
+          python src/pipeline.py
+          ls -la iris_pipeline.yaml
+
+      - name: Submit to OpenShift KFP
+        env:
+          KFP_HOST: ${{ secrets.OPENSHIFT_KFP_HOST }}
+          KFP_TOKEN: ${{ secrets.OPENSHIFT_SA_TOKEN }}
+        run: |
+          python -c "
+          import os
+          import kfp
+
+          client = kfp.Client(
+              host=os.environ['KFP_HOST'],
+              existing_token=os.environ['KFP_TOKEN']
+          )
+
+          c_val = float('${{ github.event.inputs.c_param || '1.0' }}')
+          s_val = '${{ github.event.inputs.scaler || 'standard' }}'
+
+          print(f'Submitting to OpenShift with c_param={c_val}, scaler={s_val}...')
+
+          run = client.create_run_from_pipeline_package(
+              pipeline_file='iris_pipeline.yaml',
+              arguments={
+                  'c_param': c_val,
+                  'scaler': s_val
+              },
+              experiment_name='iris-gitops-experiments',
+              run_name='github-action-run'
+          )
+          print(f'Successfully triggered! Run ID: {run.run_id}')
+          "
