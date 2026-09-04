@@ -68,19 +68,20 @@ jobs:
           sleep 3
 
           # 3. Запуск Python-скрипта с отключением проверки SSL для локального туннеля
+
           python -c "
           import os
+          import urllib3
           from kfp.client import Client
-          import kfp_server_api
 
-          configuration = kfp_server_api.Configuration()
-          configuration.verify_ssl = False
+          # Отключаем предупреждения и проверку SSL на уровне urllib3
+          urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
           client = Client(
               host='https://localhost:8888',
               existing_token=os.environ['OPENSHIFT_TOKEN'],
               namespace='serhiizn-dev',
-              client_configuration=configuration
+              verify_ssl=False
           )
 
           c_val = float(os.environ['C_PARAM'])
