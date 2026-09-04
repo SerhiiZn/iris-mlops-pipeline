@@ -44,22 +44,43 @@ jobs:
           python src/pipeline.py
           ls -la iris_pipeline.yaml
 
-      - name: Submit to OpenShift KFP
+      - name: Install OpenShift CLI (oc)
+        uses: redhat-actions/oc-installer@v1
+        with:
+          version: 'latest'
+
+      - name: Submit to OpenShift KFP via Port-Forward
         env:
-          KFP_HOST: ${{ secrets.OPENSHIFT_KFP_HOST }}
-          KFP_TOKEN: ${{ secrets.OPENSHIFT_SA_TOKEN }}
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_SA_TOKEN }}
+          # Вычисляем параметры в зависимости от того, как был запущен воркфлоу (push или workflow_dispatch)
+          C_PARAM: ${{ github.event.inputs.c_param || '1.0' }}
+          SCALER: ${{ github.event.inputs.scaler || 'standard' }}
         run: |
+          # 1. Авторизация в кластере OpenShift
+          oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify=true
+          oc project serhiizn-dev
+
+          # 2. Запуск port-forward в фоновом режиме (замените ds-pipeline-dspa на имя вашего сервиса)
+          oc port-forward svc/ds-pipeline-dspa 8888:8888 &
+          PORT_FORWARD_PID=$!
+          
+          # Ожидание поднятия туннеля
+          sleep 3
+
+          # 3. Запуск Python-скрипта для отправки пайплайна на localhost
           python -c "
           import os
-          import kfp
+          from kfp.client import Client
 
-          client = kfp.Client(
-              host=os.environ['KFP_HOST'],
-              existing_token=os.environ['KFP_TOKEN']
+          client = Client(
+              host='http://localhost:8888',
+              existing_token=os.environ['OPENSHIFT_TOKEN'],
+              namespace='serhiizn-dev'
           )
 
-          c_val = float('${{ github.event.inputs.c_param || '1.0' }}')
-          s_val = '${{ github.event.inputs.scaler || 'standard' }}'
+          c_val = float(os.environ['C_PARAM'])
+          s_val = os.environ['SCALER']
 
           print(f'Submitting to OpenShift with c_param={c_val}, scaler={s_val}...')
 
@@ -74,3 +95,6 @@ jobs:
           )
           print(f'Successfully triggered! Run ID: {run.run_id}')
           "
+
+          # 4. Корректное завершение port-forward
+          kill $PORT_FORWARD_PID
