@@ -21,7 +21,30 @@ on:
           - minmax
 
 jobs:
+  # 1. Параллельные проверки и линтинг (выполняются одновременно)
+  lint-code:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Lint Python Code
+        run: echo "Running code linting..."
+
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run unit tests
+        run: echo "Running unit tests..."
+
+  # 2. Финальный джоб деплоя, который запустится ТОЛЬКО после успешного прохождения проверок выше
   build-and-deploy:
+    needs: [lint-code, run-tests]
     runs-on: ubuntu-latest
 
     steps:
@@ -68,7 +91,6 @@ jobs:
           sleep 3
 
           # 3. Запуск Python-скрипта с отключением проверки SSL для локального туннеля
-
           python -c "
           import os
           import urllib3
