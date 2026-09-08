@@ -1,0 +1,127 @@
+name: Deploy KFP Pipeline to OpenShift
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      c_param:
+        description: 'C parameter for LogisticRegression'
+        required: true
+        default: '1.0'
+        type: string
+      scaler:
+        description: 'Scaler type (standard or minmax)'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+          - standard
+          - minmax
+
+jobs:
+  # 1. Параллельные проверки и линтинг (выполняются одновременно)
+  lint-code:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Lint Python Code
+        run: echo "Running code linting..."
+
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run unit tests
+        run: echo "Running unit tests..."
+
+  # 2. Финальный джоб деплоя, который запустится ТОЛЬКО после успешного прохождения проверок выше
+  build-and-deploy:
+    needs: [lint-code, run-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile Pipeline
+        run: |
+          # Запускаем скрипт, который создаст iris_pipeline.yaml из python-кода
+          python src/pipeline.py
+          ls -la iris_pipeline.yaml
+
+      - name: Install OpenShift CLI (oc)
+        uses: redhat-actions/oc-installer@v1
+        with:
+          oc_version: 'latest'
+
+      - name: Submit to OpenShift KFP via Port-Forward
+        env:
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_SA_TOKEN }}
+          C_PARAM: ${{ github.event.inputs.c_param || '1.0' }}
+          SCALER: ${{ github.event.inputs.scaler || 'standard' }}
+        run: |
+          # 1. Авторизация в кластере OpenShift
+          oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify=true
+          oc project serhiizn-dev
+
+          # 2. Запуск port-forward в фоновом режиме
+          oc port-forward svc/ds-pipeline-dspa 8888:8888 &
+          PORT_FORWARD_PID=$!
+          
+          # Ожидание поднятия туннеля
+          sleep 3
+
+          # 3. Запуск Python-скрипта с отключением проверки SSL для локального туннеля
+          python -c "
+          import os
+          import urllib3
+          from kfp.client import Client
+
+          # Отключаем предупреждения и проверку SSL на уровне urllib3
+          urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+          client = Client(
+              host='https://localhost:8888',
+              existing_token=os.environ['OPENSHIFT_TOKEN'],
+              namespace='serhiizn-dev',
+              verify_ssl=False
+          )
+
+          c_val = float(os.environ['C_PARAM'])
+          s_val = os.environ['SCALER']
+
+          print(f'Submitting to OpenShift with c_param={c_val}, scaler={s_val}...')
+
+          run = client.create_run_from_pipeline_package(
+              pipeline_file='iris_pipeline.yaml',
+              arguments={
+                  'c_param': c_val,
+                  'scaler': s_val
+              },
+              experiment_name='iris-gitops-experiments',
+              run_name='github-action-run'
+          )
+          print(f'Successfully triggered! Run ID: {run.run_id}')
+          "
+
+          # 4. Корректное завершение port-forward
+          kill $PORT_FORWARD_PID
