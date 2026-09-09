@@ -1,0 +1,26 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: pipeline-status-util
+  namespace: serhiizn-dev
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/max-scale: "3"
+    spec:
+      containers:
+        - image: image-registry.openshift-image-registry.svc:5000/serhiizn-dev/pipeline-status-util:latest
+          env:
+            - name: TARGET_NAMESPACE
+              value: "serhiizn-dev"
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
