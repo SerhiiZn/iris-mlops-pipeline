@@ -21,10 +21,14 @@ def root():
 @app.get("/pipeline-status")
 def get_latest_pipeline_status():
     try:
+        # Явно вказуємо HTTPS-адресу сервісу Kubeflow Pipelines у кластері
+        # (Зазвичай формат: https://ml-pipeline.kubeflow.svc:8443 або аналогічний для вашого кластера)
         client = Client(
+            host="https://ml-pipeline.kubeflow.svc:8443",
             namespace=NAMESPACE,
+            ssl_verify=False
         )
-
+       
         runs = client.list_runs(page_size=5).runs
         if not runs:
             return {"namespace": NAMESPACE, "runs": [], "message": "No runs found"}
