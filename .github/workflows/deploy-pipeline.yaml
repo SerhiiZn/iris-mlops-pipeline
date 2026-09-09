@@ -125,3 +125,19 @@ jobs:
 
           # 4. Корректное завершение port-forward
           kill $PORT_FORWARD_PID
+
+      - name: Check Pipeline Status via Knative Utility
+        env:
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_SA_TOKEN }}
+        run: |
+          # Авторизация в кластере для доступа к Knative-сервису
+          oc login "$OPENSHIFT_SERVER" --token="$OPENSHIFT_TOKEN" --insecure-skip-tls-verify=true
+          oc project serhiizn-dev
+
+          # Отримуємо URL Knative-сервісу через oc
+          KSVC_URL=$(oc get ksvc pipeline-status-util -n serhiizn-dev -o jsonpath='{.status.url}')
+          echo "Knative Utility URL: $KSVC_URL"
+
+          # Робимо запит до нашого безсерверного сервісу (він автоматично прокинеться)
+          curl -s --insecure "$KSVC_URL/pipeline-status"
